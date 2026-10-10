@@ -1,0 +1,423 @@
+"""
+speculativeTest.py
+
+Runs a speculative decoding experiment over many prompts and draft lengths,
+and writes one CSV row per run.
+
+For every prompt, each repetition runs:
+  1. A baseline: the target model alone, greedy decoding.
+  2. Speculative decoding for each K in K_VALUES.
+
+Baseline and speculative runs use the same style of loop (no KV cache), so
+the speedup compares the algorithms rather than two different implementations.
+
+Outputs:
+  results_<pair>_<timestamp>.csv    one row per run (metrics)
+  outputs_<pair>_<timestamp>.jsonl  generated text from the first repetition
+
+Before the first run, log in once with `hf auth login` so the gated Llama
+models can download. After that, `export HF_HUB_OFFLINE=1` runs fully offline.
+"""
+
+import csv
+import json
+import time
+from datetime import datetime
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+# ------------------------------------------------------------
+# Configuration
+# ------------------------------------------------------------
+
+MODEL_PAIRS = {
+    "smol": ("HuggingFaceTB/SmolLM-135M", "HuggingFaceTB/SmolLM-1.7B"),
+    "llama": ("meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct"),
+}
+
+MODEL_PAIR = "smol"
+
+MAX_NEW_TOKENS = 100
+
+# Draft lengths to test.
+K_VALUES = [1, 2, 3, 5, 8]
+
+# Repetitions per configuration. Greedy decoding produces the same tokens
+# each time, so repeats measure timing noise only.
+RUNS_PER_CONFIG = 3
+
+
+PROMPTS = {
+    "code": [
+        "Write a Python function that checks whether a string is a palindrome.",
+        "Write a Python function that returns the nth Fibonacci number using iteration.",
+        "Write a SQL query that finds the five highest-paid employees in an employees table.",
+        "Write a JavaScript function that removes duplicate values from an array.",
+        "Write a Python class for a stack with push, pop, and peek methods.",
+    ],
+    "factual": [
+        "Explain how a binary search tree works.",
+        "Explain the difference between TCP and UDP.",
+        "Explain what a hash table is and why lookups are fast.",
+        "Explain how photosynthesis works.",
+        "Explain what causes the seasons on Earth.",
+    ],
+    "summarization": [
+        "Summarize the following text in two sentences:\n\n"
+        "The town council met on Tuesday to discuss the proposed expansion of the public "
+        "library. Supporters argued that the current building is too small for the growing "
+        "number of children's programs and that the computer lab is always full. Opponents "
+        "raised concerns about the cost, which is estimated at four million dollars, and "
+        "about losing parking spaces downtown. The council agreed to hold a public hearing "
+        "next month before voting.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "Version control systems track changes to files over time. Developers can see who "
+        "changed what and when, return to earlier versions, and work on separate branches "
+        "without interfering with each other. When a feature is finished, its branch is "
+        "merged back into the main line of development. Git is the most widely used version "
+        "control system today, and services such as GitHub host Git repositories online.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "Honeybees communicate the location of food through a behavior called the waggle "
+        "dance. A forager returning to the hive moves in a figure-eight pattern, and the "
+        "angle of the straight middle run relative to vertical indicates the direction of "
+        "the food relative to the sun. The duration of the waggle indicates the distance. "
+        "Other bees follow the dancer and then fly out to find the source themselves.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "The company reported that quarterly revenue rose eight percent compared with the "
+        "same period last year, driven mainly by strong sales of its subscription software. "
+        "Hardware sales declined slightly because of supply shortages. Operating costs grew "
+        "faster than expected after the company hired several hundred new engineers. "
+        "Executives said they expect growth to continue but warned that margins may narrow.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "Unit tests check small pieces of code, such as a single function, in isolation. "
+        "They run quickly and help developers catch mistakes as soon as they are made. "
+        "Integration tests check that several components work correctly together, such as "
+        "an application and its database. A healthy test suite usually has many unit tests "
+        "and a smaller number of slower integration tests.",
+    ],
+    "creative": [
+        "Write a short story about a lighthouse keeper who finds a message in a bottle.",
+        "Write a poem about the first snowfall in the mountains.",
+        "Describe an imaginary city where it is always night.",
+        "Write the opening paragraph of a mystery novel set on a train.",
+        "Invent a new holiday and describe how people celebrate it.",
+    ],
+}
+
+
+FIELDS = [
+    "timestamp", "device", "draft_model", "target_model",
+    "category", "prompt_id", "method", "K", "run",
+    "prompt_tokens", "generated_tokens",
+    "proposed_tokens", "accepted_tokens", "acceptance_rate",
+    "iterations", "tokens_per_iteration",
+    "draft_time", "target_time", "total_time", "tokens_per_sec",
+    "avg_draft_forward", "avg_target_forward", "cost_ratio",
+    "matches_baseline",
+]
+
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+def pick_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def sync(device):
+    """Wait for the GPU to finish so timings are accurate."""
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    elif device.type == "mps":
+        torch.mps.synchronize()
+
+
+def load_model(name, device):
+    model = AutoModelForCausalLM.from_pretrained(name, dtype=torch.float16).to(device)
+    model.eval()
+    return model
+
+
+def encode(tokenizer, prompt, device):
+    """Use the chat template for instruct models, raw text otherwise."""
+    if tokenizer.chat_template:
+        encoded = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )
+        ids = encoded["input_ids"]
+    else:
+        ids = tokenizer(prompt, return_tensors="pt")["input_ids"]
+    return ids.to(device)
+
+
+def get_eos_ids(tokenizer, model):
+    """Instruct models can have more than one end-of-sequence token."""
+    ids = set()
+    gen_eos = model.generation_config.eos_token_id
+    if isinstance(gen_eos, int):
+        ids.add(gen_eos)
+    elif gen_eos:
+        ids.update(gen_eos)
+    if tokenizer.eos_token_id is not None:
+        ids.add(tokenizer.eos_token_id)
+    return ids
+
+
+def ratio(a, b):
+    return a / b if b else ""
+
+
+# ------------------------------------------------------------
+# Baseline: target model alone
+# ------------------------------------------------------------
+
+@torch.no_grad()
+def baseline_generate(model, input_ids, eos_ids, device):
+    seq = input_ids
+    new_tokens = []
+
+    sync(device)
+    start = time.perf_counter()
+
+    while len(new_tokens) < MAX_NEW_TOKENS:
+        logits = model(input_ids=seq).logits[:, -1, :]
+        next_token = torch.argmax(logits, dim=-1)
+        token = next_token.item()
+        new_tokens.append(token)
+        if token in eos_ids:
+            break
+        seq = torch.cat([seq, next_token.unsqueeze(0)], dim=1)
+
+    sync(device)
+    total_time = time.perf_counter() - start
+    n = len(new_tokens)
+
+    metrics = {
+        "generated_tokens": n,
+        "proposed_tokens": 0,
+        "accepted_tokens": 0,
+        "iterations": n,
+        "tokens_per_iteration": 1.0,
+        "draft_time": 0.0,
+        "target_time": total_time,
+        "total_time": total_time,
+        "tokens_per_sec": ratio(n, total_time),
+        "avg_target_forward": ratio(total_time, n),
+    }
+    return new_tokens, metrics
+
+
+# ------------------------------------------------------------
+# Speculative decoding
+# ------------------------------------------------------------
+
+@torch.no_grad()
+def speculative_generate(draft_model, target_model, input_ids, K, eos_ids, device):
+    seq = input_ids
+    new_tokens = []
+
+    proposed_total = 0
+    accepted_total = 0
+    iterations = 0
+    draft_time = 0.0
+    target_time = 0.0
+    done = False
+
+    sync(device)
+    start = time.perf_counter()
+
+    while not done:
+        iterations += 1
+
+        # STEP 1: draft model proposes K tokens, one at a time.
+        t0 = time.perf_counter()
+        draft_seq = seq
+        proposed = []
+        for _ in range(K):
+            logits = draft_model(input_ids=draft_seq).logits[:, -1, :]
+            next_token = torch.argmax(logits, dim=-1)
+            proposed.append(next_token.item())
+            draft_seq = torch.cat([draft_seq, next_token.unsqueeze(0)], dim=1)
+        sync(device)
+        draft_time += time.perf_counter() - t0
+        proposed_total += K
+
+        # STEP 2: target model scores context + all K proposals in one pass.
+        # Logits at position (context_len - 1 + i) predict proposal i, and the
+        # final position predicts one extra "bonus" token. That gives K + 1
+        # target predictions from a single forward pass.
+        t0 = time.perf_counter()
+        target_logits = target_model(input_ids=draft_seq).logits[0]
+        first = seq.shape[1] - 1
+        target_preds = torch.argmax(target_logits[first:], dim=-1).tolist()
+        sync(device)
+        target_time += time.perf_counter() - t0
+
+        # STEP 3: accept the longest prefix where draft and target agree.
+        accepted = 0
+        for i in range(K):
+            if proposed[i] == target_preds[i]:
+                accepted += 1
+            else:
+                break
+
+        # STEP 4: keep accepted tokens, then the target's own token at the
+        # next position. That is the correction if a proposal was rejected,
+        # or the bonus token if all K were accepted, so every iteration
+        # yields at least one token.
+        to_add = proposed[:accepted] + [target_preds[accepted]]
+        for idx, token in enumerate(to_add):
+            new_tokens.append(token)
+            if idx < accepted:
+                accepted_total += 1
+            if token in eos_ids or len(new_tokens) >= MAX_NEW_TOKENS:
+                done = True
+                break
+
+        seq = torch.cat(
+            [input_ids, torch.tensor([new_tokens], dtype=torch.long, device=device)],
+            dim=1,
+        )
+
+    sync(device)
+    total_time = time.perf_counter() - start
+    n = len(new_tokens)
+
+    avg_draft = ratio(draft_time, iterations * K)
+    avg_target = ratio(target_time, iterations)
+
+    metrics = {
+        "generated_tokens": n,
+        "proposed_tokens": proposed_total,
+        "accepted_tokens": accepted_total,
+        "acceptance_rate": ratio(accepted_total, proposed_total),
+        "iterations": iterations,
+        "tokens_per_iteration": ratio(n, iterations),
+        "draft_time": draft_time,
+        "target_time": target_time,
+        "total_time": total_time,
+        "tokens_per_sec": ratio(n, total_time),
+        "avg_draft_forward": avg_draft,
+        "avg_target_forward": avg_target,
+        "cost_ratio": ratio(avg_draft, avg_target) if avg_draft != "" else "",
+    }
+    return new_tokens, metrics
+
+
+# ------------------------------------------------------------
+# Experiment
+# ------------------------------------------------------------
+
+def main():
+    device = pick_device()
+    draft_name, target_name = MODEL_PAIRS[MODEL_PAIR]
+
+    print("Using device:", device)
+    print("Draft model: ", draft_name)
+    print("Target model:", target_name)
+
+    tokenizer = AutoTokenizer.from_pretrained(target_name)
+
+    print("Loading draft model...")
+    draft_model = load_model(draft_name, device)
+    print("Loading target model...")
+    target_model = load_model(target_name, device)
+
+    eos_ids = get_eos_ids(tokenizer, target_model)
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    csv_path = f"results_{MODEL_PAIR}_{stamp}.csv"
+    outputs_path = f"outputs_{MODEL_PAIR}_{stamp}.jsonl"
+
+    # Warmup so GPU initialization is not counted in the first timed run.
+    print("Warming up...")
+    warm_ids = encode(tokenizer, "Say hello.", device)
+    baseline_generate(target_model, warm_ids, eos_ids, device)
+    speculative_generate(draft_model, target_model, warm_ids, 3, eos_ids, device)
+
+    num_prompts = sum(len(p) for p in PROMPTS.values())
+    total_runs = num_prompts * RUNS_PER_CONFIG * (1 + len(K_VALUES))
+    run_count = 0
+
+    with open(csv_path, "w", newline="") as csv_file, open(outputs_path, "w") as out_file:
+        writer = csv.DictWriter(csv_file, fieldnames=FIELDS, restval="")
+        writer.writeheader()
+
+        for category, prompts in PROMPTS.items():
+            for p_index, prompt in enumerate(prompts, start=1):
+                prompt_id = f"{category}-{p_index}"
+                input_ids = encode(tokenizer, prompt, device)
+                reference_tokens = None
+
+                for run in range(1, RUNS_PER_CONFIG + 1):
+
+                    # Baseline and speculative runs are interleaved so that
+                    # thermal drift affects both methods equally.
+                    configs = [("baseline", None)] + [("speculative", k) for k in K_VALUES]
+
+                    for method, K in configs:
+                        if method == "baseline":
+                            tokens, metrics = baseline_generate(
+                                target_model, input_ids, eos_ids, device
+                            )
+                            if reference_tokens is None:
+                                reference_tokens = tokens
+                        else:
+                            tokens, metrics = speculative_generate(
+                                draft_model, target_model, input_ids, K, eos_ids, device
+                            )
+
+                        row = {
+                            "timestamp": datetime.now().isoformat(timespec="seconds"),
+                            "device": device.type,
+                            "draft_model": draft_name if method == "speculative" else "",
+                            "target_model": target_name,
+                            "category": category,
+                            "prompt_id": prompt_id,
+                            "method": method,
+                            "K": K if K is not None else "",
+                            "run": run,
+                            "prompt_tokens": input_ids.shape[1],
+                            "matches_baseline": tokens == reference_tokens,
+                        }
+                        row.update(metrics)
+                        writer.writerow(row)
+                        csv_file.flush()
+
+                        if run == 1:
+                            out_file.write(json.dumps({
+                                "prompt_id": prompt_id,
+                                "method": method,
+                                "K": K,
+                                "text": tokenizer.decode(tokens, skip_special_tokens=True),
+                            }) + "\n")
+                            out_file.flush()
+
+                        run_count += 1
+                        label = "baseline" if K is None else f"K={K}"
+                        print(
+                            f"[{run_count}/{total_runs}] {prompt_id} run {run} {label}: "
+                            f"{metrics['generated_tokens']} tokens, "
+                            f"{metrics['tokens_per_sec']:.2f} tok/s"
+                        )
+
+    print("\nResults written to", csv_path)
+    print("Outputs written to", outputs_path)
+
+
+if __name__ == "__main__":
+    main()
