@@ -67,8 +67,8 @@ MAX_NEW_TOKENS = 100
 # Temperature 0 is greedy decoding (what speculativeTest.py uses).
 # Higher temperatures show how alpha changes under sampling.
 # For Spec-Bench, [0.0] alone is 480 samples; all three is about 3,400.
-#TEMPERATURES = [0.0, 0.7, 1.0]
-TEMPERATURES = [0.0]
+TEMPERATURES = [0.0, 0.7, 1.0]
+#TEMPERATURES = [0.0]
 # Samples per prompt at each temperature above 0. Temperature 0 is
 # deterministic, so it always uses one sample.
 SAMPLES_PER_PROMPT = 3
