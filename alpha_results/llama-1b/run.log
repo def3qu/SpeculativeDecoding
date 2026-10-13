@@ -1,0 +1,13 @@
+2026-10-12 14:40:05  INFO  Draft:  meta-llama/Llama-3.2-1B-Instruct
+2026-10-12 14:40:05  INFO  Target: meta-llama/Llama-3.3-70B-Instruct
+2026-10-12 14:40:05  INFO  Device: mps, dtype: torch.float16, target quantization: 4bit
+2026-10-12 14:40:05  INFO  HTTP Request: GET https://huggingface.co/api/models/meta-llama/Llama-3.3-70B-Instruct "HTTP/1.1 200 OK"
+2026-10-12 14:40:06  INFO  HTTP Request: HEAD https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/resolve/6f6073b423013f6a7d4d9f39144961bfbfbc386b/config.json "HTTP/1.1 403 Forbidden"
+2026-10-12 14:40:06  INFO  HTTP Request: HEAD https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/resolve/6f6073b423013f6a7d4d9f39144961bfbfbc386b/config.json "HTTP/1.1 403 Forbidden"
+2026-10-12 14:42:19  INFO  Draft:  meta-llama/Llama-3.2-1B-Instruct
+2026-10-12 14:42:19  INFO  Target: meta-llama/Llama-3.3-70B-Instruct
+2026-10-12 14:42:19  INFO  Device: mps, dtype: torch.float16, target quantization: 4bit
+2026-10-12 14:42:19  INFO  HTTP Request: GET https://huggingface.co/api/models/meta-llama/Llama-3.3-70B-Instruct "HTTP/1.1 200 OK"
+2026-10-12 14:42:19  INFO  HTTP Request: HEAD https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/resolve/6f6073b423013f6a7d4d9f39144961bfbfbc386b/config.json "HTTP/1.1 403 Forbidden"
+2026-10-12 14:42:19  INFO  HTTP Request: HEAD https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct/resolve/6f6073b423013f6a7d4d9f39144961bfbfbc386b/config.json "HTTP/1.1 403 Forbidden"
+2026-10-12 14:44:31  ERROR  Existing run in alpha_results/llama-1b used target='meta-llama/Llama-3.3-70B-Instruct', now 'meta-llama/Llama-3.1-8B-Instruct'. Use a different --run-name or delete the directory.

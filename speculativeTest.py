@@ -34,10 +34,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL_PAIRS = {
     "smol": ("HuggingFaceTB/SmolLM-135M", "HuggingFaceTB/SmolLM-1.7B"),
-    "llama": ("meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.2-3B-Instruct"),
+    "llama": ("meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"),
 }
 
-MODEL_PAIR = "smol"
+MODEL_PAIR = "llama"
 
 MAX_NEW_TOKENS = 100
 

@@ -1,0 +1,10 @@
+{
+  "draft": "meta-llama/Llama-3.2-1B-Instruct",
+  "target": "meta-llama/Llama-3.3-70B-Instruct",
+  "max_new_tokens": 256,
+  "gamma": 5,
+  "empirical": true,
+  "target_quant": "4bit",
+  "dtype": "torch.float16",
+  "device": "mps"
+}

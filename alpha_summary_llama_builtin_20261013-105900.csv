@@ -1,0 +1,6 @@
+task,temperature,samples,tokens,alpha,greedy_agreement,pred_tokens_per_pass_K1,pred_tokens_per_pass_K2,pred_tokens_per_pass_K3,pred_tokens_per_pass_K5,pred_tokens_per_pass_K8
+code,0.0,5,500,0.952,0.952,1.952,2.858,3.721,5.324,7.452
+creative,0.0,5,500,0.77,0.77,1.77,2.363,2.819,3.442,3.934
+factual,0.0,5,500,0.916,0.916,1.916,2.755,3.524,4.873,6.5
+summarization,0.0,5,301,0.8472,0.8472,1.847,2.565,3.173,4.124,5.073
+ALL,0.0,20,1801,0.874,0.874,1.874,2.638,3.305,4.399,5.574
