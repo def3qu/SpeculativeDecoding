@@ -1,0 +1,193 @@
+timestamp,pair,method,model,K,max_new_tokens,prompt,prompt_tokens,prompt_time,generated_tokens,gen_time,gen_tokens_per_sec,total_time,load_time,rounds,accepted_tokens,acceptance_rate,tokens_per_round,draft_time,target_time,matches_baseline,answer
+2026-10-14T13:50:08,llama,baseline,meta-llama/Llama-3.1-8B-Instruct,,256,Describe hash tables,38,0.17109575000358745,256,7.862316249986179,32.560379392071646,8.033411999989767,,,,,,,,,"**Hash Tables: A Data Structure Overview**
+
+A hash table, also known as a hash map or dictionary, is a data structure that stores key-value pairs in a way that allows for efficient lookup, insertion, and deletion of elements. It's a fundamental data structure in computer science, widely used in various applications, including databases, caching, and data storage.
+
+**Key Components**
+
+1. **Keys**: Unique identifiers for each element in the hash table. Keys are typically strings, integers, or other hashable objects.
+2. **Values**: The data associated with each key. Values can be of any data type.
+3. **Hash Function**: A function that takes a key as input and generates a hash code, which is an index into the hash table array.
+4. **Hash Table Array**: An array of buckets, where each bucket stores a key-value pair.
+
+**How Hash Tables Work**
+
+1. **Insertion**: When a new key-value pair is inserted, the hash function generates a hash code for the key. The resulting index is used to store the key-value pair in the corresponding bucket.
+2. **Lookup**: When a key is looked up, the hash function generates a hash code for the key. The resulting index is used to retrieve the corresponding value"
+2026-10-14T13:50:08,llama,speculative,meta-llama/Llama-3.2-1B-Instruct -> meta-llama/Llama-3.1-8B-Instruct,5,256,Describe hash tables,38,0.1201550830155611,256,5.219204875000287,49.04961696871229,5.339359958015848,,63,194,0.6158730158730159,4.063492063492063,2.951464293815661,2.264846211823169,True,"**Hash Tables: A Data Structure Overview**
+
+A hash table, also known as a hash map or dictionary, is a data structure that stores key-value pairs in a way that allows for efficient lookup, insertion, and deletion of elements. It's a fundamental data structure in computer science, widely used in various applications, including databases, caching, and data storage.
+
+**Key Components**
+
+1. **Keys**: Unique identifiers for each element in the hash table. Keys are typically strings, integers, or other hashable objects.
+2. **Values**: The data associated with each key. Values can be of any data type.
+3. **Hash Function**: A function that takes a key as input and generates a hash code, which is an index into the hash table array.
+4. **Hash Table Array**: An array of buckets, where each bucket stores a key-value pair.
+
+**How Hash Tables Work**
+
+1. **Insertion**: When a new key-value pair is inserted, the hash function generates a hash code for the key. The resulting index is used to store the key-value pair in the corresponding bucket.
+2. **Lookup**: When a key is looked up, the hash function generates a hash code for the key. The resulting index is used to retrieve the corresponding value"
+2026-10-14T13:50:08,llama,ollama,llama3.1:8b-instruct-fp16,,256,Describe hash tables,13,0.079581,256,5.947441,43.04372250182894,7.897179166960996,1.860573667,,,,,,,,"**Hash Tables**
+===============
+
+A hash table, also known as a hash map or dictionary, is a data structure that stores key-value pairs in a way that allows for efficient lookup, insertion, and deletion of elements.
+
+**Key Components**
+-----------------
+
+1. **Keys**: Unique identifiers for each element in the hash table.
+2. **Values**: The data associated with each key.
+3. **Hash Function**: A function that takes a key as input and generates a hash code, which is used to determine the index at which the corresponding value is stored.
+4. **Bucket Array**: An array of buckets, where each bucket is a container that holds a collection of key-value pairs.
+
+**How Hash Tables Work**
+------------------------
+
+1. **Insertion**: When a new key-value pair is inserted into the hash table, the hash function is applied to the key to generate a hash code.
+2. **Hash Code**: The hash code is used to determine the index at which the corresponding value is stored in the bucket array.
+3. **Collision Resolution**: If two keys hash to the same index, a collision occurs. To resolve this, the hash table uses a collision resolution strategy, such as chaining (storing multiple key-value pairs in the same bucket) or open addressing"
+2026-10-14T13:51:41,llama,baseline,meta-llama/Llama-3.1-8B-Instruct,,256,quit,36,0.17370133398799226,46,1.4350234160083346,32.055226058926436,1.6087247499963269,,,,,,,,,"If you're feeling overwhelmed or need to take a break, it's perfectly fine to quit our conversation. Is there anything specific that's causing you to want to quit, or is there anything else I can do to help?"
+2026-10-14T13:51:41,llama,speculative,meta-llama/Llama-3.2-1B-Instruct -> meta-llama/Llama-3.1-8B-Instruct,5,256,quit,36,0.12187562498729676,46,1.2208895000512712,37.6774474660223,1.342765125038568,,15,33,0.44,3.066666666666667,0.685003332037013,0.534909249166958,True,"If you're feeling overwhelmed or need to take a break, it's perfectly fine to quit our conversation. Is there anything specific that's causing you to want to quit, or is there anything else I can do to help?"
+2026-10-14T13:51:41,llama,ollama,llama3.1:8b-instruct-fp16,,256,quit,11,0.098093,38,0.872986,43.528762202372086,0.9866644170251675,0.006176,,,,,,,,"It seems like you might be looking to end our conversation. Is there anything specific you'd like to talk about before we part ways, or would you like some help with something else?"
+2026-10-14T13:53:57,llama,baseline,meta-llama/Llama-3.1-8B-Instruct,,256,Explain the theory of evolution,41,0.17071566596860066,256,7.85459304205142,32.592395128486416,8.02530870802002,,,,,,,,,"The theory of evolution is a fundamental concept in biology that explains how species change over time through the process of natural selection. It was first proposed by Charles Darwin in his book ""On the Origin of Species"" in 1859.
+
+**Key Components of the Theory of Evolution:**
+
+1. **Descent with Modification**: All living organisms share a common ancestor and have evolved over time through a process of modification.
+2. **Variation**: All individuals within a species exhibit genetic variation, which is the raw material for evolution.
+3. **Heritability**: The traits of an individual are determined by their genetic makeup, which is passed on from one generation to the next.
+4. **Adaptation**: The environment selects for individuals with traits that are better suited to their environment, leading to the survival and reproduction of those individuals.
+5. **Natural Selection**: The process by which the environment selects for individuals with favorable traits, leading to the evolution of a species over time.
+
+**The Process of Evolution:**
+
+1. **Mutation**: Genetic mutations occur randomly, resulting in new traits or variations.
+2. **Genetic Drift**: Random events, such as genetic mutations or changes in population size, can lead to the loss or fixation of traits.
+3. **Gene Flow"
+2026-10-14T13:53:57,llama,speculative,meta-llama/Llama-3.2-1B-Instruct -> meta-llama/Llama-3.1-8B-Instruct,5,256,Explain the theory of evolution,41,0.12526870897272602,256,4.3946541249752045,58.252593428258564,4.5199228339479305,,53,203,0.7660377358490567,4.830188679245283,2.489367291331291,1.903779542830307,True,"The theory of evolution is a fundamental concept in biology that explains how species change over time through the process of natural selection. It was first proposed by Charles Darwin in his book ""On the Origin of Species"" in 1859.
+
+**Key Components of the Theory of Evolution:**
+
+1. **Descent with Modification**: All living organisms share a common ancestor and have evolved over time through a process of modification.
+2. **Variation**: All individuals within a species exhibit genetic variation, which is the raw material for evolution.
+3. **Heritability**: The traits of an individual are determined by their genetic makeup, which is passed on from one generation to the next.
+4. **Adaptation**: The environment selects for individuals with traits that are better suited to their environment, leading to the survival and reproduction of those individuals.
+5. **Natural Selection**: The process by which the environment selects for individuals with favorable traits, leading to the evolution of a species over time.
+
+**The Process of Evolution:**
+
+1. **Mutation**: Genetic mutations occur randomly, resulting in new traits or variations.
+2. **Genetic Drift**: Random events, such as genetic mutations or changes in population size, can lead to the loss or fixation of traits.
+3. **Gene Flow"
+2026-10-14T13:53:57,llama,ollama,llama3.1:8b-instruct-fp16,,256,Explain the theory of evolution,16,0.073147,256,6.03979,42.385579631079885,6.128927291953005,0.00618375,,,,,,,,"The theory of evolution! One of the most fundamental and widely accepted scientific explanations for the diversity of life on Earth. Here's a comprehensive overview:
+
+**What is evolution?**
+
+Evolution is the scientifically supported theory that all species of life have developed from a common ancestor through a process of variation, mutation, genetic drift, and natural selection. It explains how living organisms have changed over time, adapting to their environments and giving rise to new species.
+
+**Key components of evolution:**
+
+1. **Variation**: All individuals within a species exhibit genetic differences, which provide the raw material for evolution.
+2. **Heritability**: These genetic differences are passed on from parents to offspring, ensuring that the traits are inherited.
+3. **Mutation**: Random genetic changes occur in individuals, introducing new traits or altering existing ones.
+4. **Genetic drift**: Random events, such as genetic mutations or changes in population size, can lead to the loss or fixation of certain traits.
+5. **Natural selection**: The environment acts on the variation in a population, favoring individuals with traits that enhance their survival and reproductive success. This leads to the accumulation of adaptations over time.
+
+**Mechanisms of evolution:**
+
+1. **Adaptation**: The process by which a species becomes"
+2026-10-14T13:58:27,llama,baseline,meta-llama/Llama-3.1-8B-Instruct,,256,Tell me about the war of the roses,43,0.17918045801343396,256,7.878628083970398,32.49296670328294,8.057808541983832,,,,,,,,,"The Wars of the Roses was a series of civil wars fought in medieval England from 1455 to 1485 between the rival houses of Lancaster and York, both branches of the royal House of Plantagenet. The conflict was named after the symbols of the two houses: the red rose of Lancaster and the white rose of York.
+
+**Causes of the War:**
+
+The war was sparked by a dynastic struggle for the throne of England, which had been vacant since the death of King Henry V in 1422. His son, Henry VI, was only nine months old at the time and was declared king, but his mental health issues and the power vacuum created by his minority led to a struggle for control between the powerful nobles of the time.
+
+**The Lancaster and York Houses:**
+
+The House of Lancaster was led by the powerful Earl of Somerset, while the House of York was led by Richard, Duke of York, who claimed the throne through his descent from Lionel of Antwerp, the second son of King Edward III. The Yorkists argued that the throne should have passed to them through the male line, while the Lancastrians maintained that the throne should pass through the female line, as was the custom at the time.
+
+**Key Events of the War"
+2026-10-14T13:58:27,llama,speculative,meta-llama/Llama-3.2-1B-Instruct -> meta-llama/Llama-3.1-8B-Instruct,5,256,Tell me about the war of the roses,43,0.12425987503957003,256,5.932168458006345,43.154539830117244,6.056428333045915,,72,186,0.5166666666666667,3.5555555555555554,3.3360419209930114,2.592715412203688,True,"The Wars of the Roses was a series of civil wars fought in medieval England from 1455 to 1485 between the rival houses of Lancaster and York, both branches of the royal House of Plantagenet. The conflict was named after the symbols of the two houses: the red rose of Lancaster and the white rose of York.
+
+**Causes of the War:**
+
+The war was sparked by a dynastic struggle for the throne of England, which had been vacant since the death of King Henry V in 1422. His son, Henry VI, was only nine months old at the time and was declared king, but his mental health issues and the power vacuum created by his minority led to a struggle for control between the powerful nobles of the time.
+
+**The Lancaster and York Houses:**
+
+The House of Lancaster was led by the powerful Earl of Somerset, while the House of York was led by Richard, Duke of York, who claimed the throne through his descent from Lionel of Antwerp, the second son of King Edward III. The Yorkists argued that the throne should have passed to them through the male line, while the Lancastrians maintained that the throne should pass through the female line, as was the custom at the time.
+
+**Key Events of the War"
+2026-10-14T13:58:27,llama,ollama,llama3.1:8b-instruct-fp16,,256,Tell me about the war of the roses,18,0.072597,256,6.036491,42.40874375527107,6.128819625009783,0.006113958,,,,,,,,"The Wars of the Roses (1455-1485) was a series of civil wars fought between the rival houses of Lancaster and York, both branches of the royal House of Plantagenet, for the throne of England. The conflict was a dynastic struggle that lasted for over three decades and ultimately led to the downfall of the Plantagenet dynasty and the rise of the Tudors.
+
+**Causes of the War**
+
+The Wars of the Roses were sparked by a combination of factors, including:
+
+1. **Succession Crisis**: The Lancastrian king, Henry VI, suffered from mental health issues and was deemed unfit to rule. His wife, Margaret of Anjou, sought to secure the throne for her son, Edward of Westminster.
+2. **Power Struggle**: The powerful noble families, the Beauforts (Lancastrians) and the Nevilles (Yorkists), vied for control of the government and the throne.
+3. **Economic and Social Unrest**: The Black Death (1348-1350) had devastated England's population, leading to economic hardship, social unrest, and a decline in the power of the nobility.
+
+**The Two Houses**
+
+The two rival houses were:
+
+1. **House of Lancaster**: Represented"
+2026-10-14T14:00:26,llama,baseline,meta-llama/Llama-3.1-8B-Instruct,,256,Describe binary search trees,39,0.1769503749674186,256,7.868277333036531,32.53571133355111,8.04522770800395,,,,,,,,,"**Binary Search Trees (BSTs)**
+=====================================
+
+A Binary Search Tree (BST) is a data structure in which each node has at most two children (i.e., left child and right child). Each node represents a value, and the left subtree of a node contains only values less than the node's value, while the right subtree of a node contains only values greater than the node's value.
+
+**Properties of a Binary Search Tree:**
+
+1.  **Each node has a unique value**.
+2.  **All values in the left subtree of a node are less than the node's value**.
+3.  **All values in the right subtree of a node are greater than the node's value**.
+4.  **For any node, all values in its left subtree are less than all values in its right subtree**.
+
+**Types of Binary Search Trees:**
+
+1.  **Empty Tree**: A tree with no nodes.
+2.  **Single Node Tree**: A tree with a single node.
+3.  **Balanced Tree**: A tree where the height of the left and right subtrees of every node differs by at most one.
+4.  **Unbalanced Tree**: A tree where the height of the left and right subt"
+2026-10-14T14:00:26,llama,speculative,meta-llama/Llama-3.2-1B-Instruct -> meta-llama/Llama-3.1-8B-Instruct,5,256,Describe binary search trees,39,0.12148145900573581,256,4.704976415960118,54.410474647992366,4.826457874965854,,57,199,0.6982456140350877,4.491228070175438,2.6627887059003115,2.040044585301075,False,"**Binary Search Trees (BSTs)**
+=====================================
+
+A Binary Search Tree (BST) is a data structure in which each node has at most two children (i.e., left child and right child). Each node represents a value, and the left subtree of a node contains only values less than the node's value, while the right subtree of a node contains only values greater than the node's value.
+
+**Properties of a BST:**
+
+1.  **Each node has a unique value**.
+2.  **All values in the left subtree of a node are less than the node's value**.
+3.  **All values in the right subtree of a node are greater than the node's value**.
+4.  **For any node, all values in its left subtree are less than all values in its right subtree**.
+
+**Types of BSTs:**
+
+1.  **Ordered BST**: Each node's value is unique, and the order of the values in the tree is preserved.
+2.  **Unordered BST**: Each node's value is unique, but the order of the values in the tree is not preserved.
+3.  **Self-Balancing BST**: A BST that automatically balances itself after insertion or deletion of nodes to maintain a"
+2026-10-14T14:00:26,llama,ollama,llama3.1:8b-instruct-fp16,,256,Describe binary search trees,14,0.076456,256,6.028127,42.46758570282279,6.123810874996707,0.006150208,,,,,,,,"**Binary Search Trees (BSTs)**
+==========================
+
+A binary search tree (BST) is a data structure in which each node has at most two children (i.e., left child and right child). Each node represents a value, and the left subtree of a node contains only values less than the node's value, while the right subtree of a node contains only values greater than the node's value.
+
+**Properties of a BST:**
+
+1. **Each node has a unique value**.
+2. **All values in the left subtree of a node are less than the node's value**.
+3. **All values in the right subtree of a node are greater than the node's value**.
+4. **For any node, all values in its left subtree are less than all values in its right subtree**.
+
+**Types of BSTs:**
+
+1. **Ordered BST**: Each node's value is unique, and the order of the values in the tree is preserved.
+2. **Unordered BST**: Each node's value is unique, but the order of the values in the tree is not preserved.
+
+**Operations on a BST:**
+
+1. **Insert**: Add a new value to the tree while maintaining the BST properties.
+2. **Delete**: Remove"

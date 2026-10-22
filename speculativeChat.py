@@ -29,6 +29,7 @@ models. The Qwen models are not gated.
 import csv
 import json
 import os
+import platform
 import time
 import urllib.error
 import urllib.request
@@ -72,7 +73,11 @@ START_MAX_NEW_TOKENS = 256
 
 OLLAMA_URL = "http://localhost:11434"
 
+# Two logs are kept. The chat log has everything, including the prompt and
+# answer text. The performance log has only the measurements, one row per
+# method per query; query_id links the rows that came from the same prompt.
 LOG_FILE = f"chat_log_{MODEL_PAIR}.csv"
+PERF_LOG_FILE = f"perf_log_{MODEL_PAIR}.csv"
 
 MODES = ["all", "baseline", "speculative", "ollama"]
 
@@ -82,6 +87,15 @@ LOG_FIELDS = [
     "gen_tokens_per_sec", "total_time", "load_time",
     "rounds", "accepted_tokens", "acceptance_rate", "tokens_per_round",
     "draft_time", "target_time", "matches_baseline", "answer",
+]
+
+PERF_FIELDS = [
+    "timestamp", "query_id", "host", "device", "pair", "method", "model",
+    "K", "max_new_tokens", "prompt_tokens", "prompt_time",
+    "generated_tokens", "gen_time", "gen_tokens_per_sec", "speedup_vs_baseline",
+    "total_time", "load_time",
+    "rounds", "accepted_tokens", "acceptance_rate", "tokens_per_round",
+    "draft_time", "target_time", "matches_baseline",
 ]
 
 
@@ -405,6 +419,34 @@ def log_results(prompt, results, answers, k, max_new, names):
             writer.writerow(row)
 
 
+def log_performance(query_id, results, k, max_new, names, device):
+    """Measurements only, no prompt or answer text."""
+    base_rate = results.get("baseline", {}).get("gen_tokens_per_sec")
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    new_file = not os.path.exists(PERF_LOG_FILE)
+    with open(PERF_LOG_FILE, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=PERF_FIELDS, restval="")
+        if new_file:
+            writer.writeheader()
+        for method, m in results.items():
+            row = {
+                "timestamp": timestamp,
+                "query_id": query_id,
+                "host": platform.node(),
+                "device": device.type,
+                "pair": MODEL_PAIR,
+                "method": method,
+                "model": names[method],
+                "K": k if method == "speculative" else "",
+                "max_new_tokens": max_new,
+            }
+            row.update({key: value for key, value in m.items() if key in PERF_FIELDS})
+            if base_rate:
+                row["speedup_vs_baseline"] = m["gen_tokens_per_sec"] / base_rate
+            writer.writerow(row)
+
+
 def print_help():
     print(
         "\nType a prompt and press Enter. Commands:\n"
@@ -448,13 +490,19 @@ def main():
 
     mode, k, max_new = START_MODE, START_K, START_MAX_NEW_TOKENS
 
+    # Query ids look like 20261014-135700-3: session start time, then a
+    # counter, so they stay unique across sessions in the same log file.
+    session = datetime.now().strftime("%Y%m%d-%H%M%S")
+    query_count = 0
+
     # Warmup so GPU start-up costs are not counted in the first real query.
     print("Warming up...")
     warm_ids = encode(tokenizer, "Say hello.", device)
     run_baseline(target, warm_ids, eos_ids, vocab, 8, device)
     run_speculative(draft, target, warm_ids, k, eos_ids, vocab, 8, device)
 
-    print(f"\nReady. Pair: {MODEL_PAIR}. Results are appended to {LOG_FILE}.")
+    print(f"\nReady. Pair: {MODEL_PAIR}.")
+    print(f"Full results are appended to {LOG_FILE}; measurements only to {PERF_LOG_FILE}.")
     print_help()
 
     while True:
@@ -498,7 +546,9 @@ def main():
             if method == "baseline":
                 tokens, metrics = run_baseline(target, input_ids, eos_ids, vocab, max_new, device)
                 baseline_tokens = tokens
-                answers[method] = tokenizer.decode(tokens, skip_special_tokens=True)
+                answers[method] = tokenizer.decode(
+                    tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                )
             elif method == "speculative":
                 tokens, metrics = run_speculative(
                     draft, target, input_ids, k, eos_ids, vocab, max_new, device
@@ -506,7 +556,9 @@ def main():
                 metrics["K"] = k
                 if baseline_tokens is not None:
                     metrics["matches_baseline"] = tokens == baseline_tokens
-                answers[method] = tokenizer.decode(tokens, skip_special_tokens=True)
+                answers[method] = tokenizer.decode(
+                    tokens, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                )
             else:
                 try:
                     answers[method], metrics = run_ollama(ollama_name, prompt, max_new)
@@ -531,7 +583,9 @@ def main():
 
         if results:
             print_table(results)
+            query_count += 1
             log_results(prompt, results, answers, k, max_new, names)
+            log_performance(f"{session}-{query_count}", results, k, max_new, names, device)
 
     print("Goodbye.")
 

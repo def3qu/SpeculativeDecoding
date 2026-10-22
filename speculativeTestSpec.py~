@@ -1,0 +1,570 @@
+"""
+speculativeTestSpec.py
+
+Runs a speculative decoding experiment over many prompts and draft lengths,
+and writes one CSV row per run.
+
+For every prompt, each repetition runs:
+  1. A baseline: the target model alone, greedy decoding.
+  2. Speculative decoding for each K in K_VALUES.
+
+Baseline and speculative runs use the same style of loop (no KV cache), so
+the speedup compares the algorithms rather than two different implementations.
+
+Choose the prompts with PROMPT_SET below:
+  "builtin"    the 20 prompts below (4 categories of 5)
+  "specbench"  the 480 Spec-Bench prompts (spec_bench_questions.jsonl), the
+               standard benchmark for speculative decoding
+
+prompt_id and task match alphaTest.py, so results can be joined with the
+alpha CSV on prompt_id (or grouped by task) to compare predicted and measured
+speedups.
+
+Outputs:
+  results_<pair>_<set>_<timestamp>.csv    one row per run (metrics)
+  outputs_<pair>_<set>_<timestamp>.jsonl  generated text from the first repetition
+
+Before the first run, log in once with `hf auth login` so the gated Llama
+models can download. After that, `export HF_HUB_OFFLINE=1` runs fully offline.
+The Qwen models are not gated.
+"""
+
+import csv
+import json
+import os
+import time
+from collections import defaultdict
+from datetime import datetime
+
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+   RESUME_FROM = "results_llama_specbench_20261021-105500.csv"   # your actual filename
+# ------------------------------------------------------------
+# Configuration
+# ------------------------------------------------------------
+
+# Draft and target must share a tokenizer, since token ids are compared directly.
+# All Qwen2.5 models share one tokenizer; all Llama 3.x models share another.
+MODEL_PAIRS = {
+    "qwen": ("Qwen/Qwen2.5-0.5B-Instruct", "Qwen/Qwen2.5-7B-Instruct"),
+    "llama": ("meta-llama/Llama-3.2-1B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"),
+}
+
+MODEL_PAIR = "llama"
+
+# Which prompts to use: "builtin" or "specbench".
+PROMPT_SET = "specbench"
+
+# Path to the Spec-Bench question file (used only when PROMPT_SET = "specbench").
+SPEC_BENCH_FILE = "spec_bench_questions.jsonl"
+
+# Use only the first N prompts of each task, for quick tests. None uses all.
+# Spec-Bench has 6 tasks, so 5 here gives a 30-prompt trial run.
+MAX_PROMPTS_PER_TASK = None
+
+MAX_NEW_TOKENS = 100
+
+# Draft lengths to test.
+K_VALUES = [1, 2, 3, 5, 8]
+
+# Repetitions per configuration. Greedy decoding produces the same tokens
+# each time, so repeats measure timing noise only. With 480 Spec-Bench
+# prompts, 1 is usually enough: timing noise averages out across prompts,
+# and each extra repetition adds the full run time again.
+RUNS_PER_CONFIG = 1
+
+# To continue a run that stopped early, set this to its results CSV, e.g.
+# "results_llama_specbench_20261021-105500.csv". Prompts that finished are
+# skipped, rows from a prompt that was cut off partway are discarded and that
+# prompt is rerun, and new rows are added to the same CSV and outputs files.
+# Leave as None to start a fresh run.
+RESUME_FROM = None
+
+
+PROMPTS = {
+    "code": [
+        "Write a Python function that checks whether a string is a palindrome.",
+        "Write a Python function that returns the nth Fibonacci number using iteration.",
+        "Write a SQL query that finds the five highest-paid employees in an employees table.",
+        "Write a JavaScript function that removes duplicate values from an array.",
+        "Write a Python class for a stack with push, pop, and peek methods.",
+    ],
+    "factual": [
+        "Explain how a binary search tree works.",
+        "Explain the difference between TCP and UDP.",
+        "Explain what a hash table is and why lookups are fast.",
+        "Explain how photosynthesis works.",
+        "Explain what causes the seasons on Earth.",
+    ],
+    "summarization": [
+        "Summarize the following text in two sentences:\n\n"
+        "The town council met on Tuesday to discuss the proposed expansion of the public "
+        "library. Supporters argued that the current building is too small for the growing "
+        "number of children's programs and that the computer lab is always full. Opponents "
+        "raised concerns about the cost, which is estimated at four million dollars, and "
+        "about losing parking spaces downtown. The council agreed to hold a public hearing "
+        "next month before voting.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "Version control systems track changes to files over time. Developers can see who "
+        "changed what and when, return to earlier versions, and work on separate branches "
+        "without interfering with each other. When a feature is finished, its branch is "
+        "merged back into the main line of development. Git is the most widely used version "
+        "control system today, and services such as GitHub host Git repositories online.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "Honeybees communicate the location of food through a behavior called the waggle "
+        "dance. A forager returning to the hive moves in a figure-eight pattern, and the "
+        "angle of the straight middle run relative to vertical indicates the direction of "
+        "the food relative to the sun. The duration of the waggle indicates the distance. "
+        "Other bees follow the dancer and then fly out to find the source themselves.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "The company reported that quarterly revenue rose eight percent compared with the "
+        "same period last year, driven mainly by strong sales of its subscription software. "
+        "Hardware sales declined slightly because of supply shortages. Operating costs grew "
+        "faster than expected after the company hired several hundred new engineers. "
+        "Executives said they expect growth to continue but warned that margins may narrow.",
+
+        "Summarize the following text in two sentences:\n\n"
+        "Unit tests check small pieces of code, such as a single function, in isolation. "
+        "They run quickly and help developers catch mistakes as soon as they are made. "
+        "Integration tests check that several components work correctly together, such as "
+        "an application and its database. A healthy test suite usually has many unit tests "
+        "and a smaller number of slower integration tests.",
+    ],
+    "creative": [
+        "Write a short story about a lighthouse keeper who finds a message in a bottle.",
+        "Write a poem about the first snowfall in the mountains.",
+        "Describe an imaginary city where it is always night.",
+        "Write the opening paragraph of a mystery novel set on a train.",
+        "Invent a new holiday and describe how people celebrate it.",
+    ],
+}
+
+
+# Spec-Bench's multi-turn task is MT-Bench, stored under eight subcategories
+# of 10 prompts each. They are grouped into one task of 80, as in alphaTest.py
+# and the Spec-Bench papers; the subcategory is kept in the category column.
+MT_BENCH_CATEGORIES = {
+    "writing", "roleplay", "reasoning", "math",
+    "coding", "extraction", "stem", "humanities",
+}
+
+
+FIELDS = [
+    "timestamp", "device", "draft_model", "target_model", "prompt_set",
+    "task", "category", "prompt_id", "method", "K", "run",
+    "prompt_tokens", "generated_tokens",
+    "proposed_tokens", "accepted_tokens", "acceptance_rate",
+    "iterations", "tokens_per_iteration",
+    "draft_time", "target_time", "total_time", "tokens_per_sec",
+    "avg_draft_forward", "avg_target_forward", "cost_ratio",
+    "matches_baseline",
+]
+
+
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
+
+def pick_device():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def sync(device):
+    """Wait for the GPU to finish so timings are accurate."""
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    elif device.type == "mps":
+        torch.mps.synchronize()
+
+
+def load_model(name, device):
+    model = AutoModelForCausalLM.from_pretrained(name, dtype=torch.float16).to(device)
+    model.eval()
+    return model
+
+
+def encode(tokenizer, prompt, device):
+    """Use the chat template for instruct models, raw text otherwise."""
+    if tokenizer.chat_template:
+        encoded = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )
+        ids = encoded["input_ids"]
+    else:
+        ids = tokenizer(prompt, return_tensors="pt")["input_ids"]
+    return ids.to(device)
+
+
+def get_eos_ids(tokenizer, model):
+    """Instruct models can have more than one end-of-sequence token."""
+    ids = set()
+    gen_eos = model.generation_config.eos_token_id
+    if isinstance(gen_eos, int):
+        ids.add(gen_eos)
+    elif gen_eos:
+        ids.update(gen_eos)
+    if tokenizer.eos_token_id is not None:
+        ids.add(tokenizer.eos_token_id)
+    return ids
+
+
+def ratio(a, b):
+    return a / b if b else ""
+
+
+def load_prompts():
+    """Returns a list of dicts with task, category, prompt_id, and prompt.
+    Same ids and task names as alphaTest.py."""
+    prompts = []
+
+    if PROMPT_SET == "builtin":
+        for category, texts in PROMPTS.items():
+            for p_index, text in enumerate(texts, start=1):
+                prompts.append({
+                    "task": category,
+                    "category": category,
+                    "prompt_id": f"{category}-{p_index}",
+                    "prompt": text,
+                })
+
+    elif PROMPT_SET == "specbench":
+        with open(SPEC_BENCH_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                category = record["category"]
+                prompts.append({
+                    "task": "mt_bench" if category in MT_BENCH_CATEGORIES else category,
+                    "category": category,
+                    "prompt_id": f"sb-{record['question_id']}",
+                    # MT-Bench questions have a second turn; only the first is used.
+                    "prompt": record["turns"][0],
+                })
+
+    else:
+        raise SystemExit(f'Unknown PROMPT_SET {PROMPT_SET!r}. Use "builtin" or "specbench".')
+
+    if MAX_PROMPTS_PER_TASK is not None:
+        kept, counts = [], defaultdict(int)
+        for p in prompts:
+            if counts[p["task"]] < MAX_PROMPTS_PER_TASK:
+                kept.append(p)
+                counts[p["task"]] += 1
+        prompts = kept
+
+    return prompts
+
+
+def resume_existing(csv_path, outputs_path, runs_per_prompt):
+    """Keep only rows from prompts that finished every configuration, rewrite
+    both files with just those rows, and return the set of finished prompt ids."""
+    with open(csv_path, newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    counts = defaultdict(int)
+    for r in rows:
+        counts[r["prompt_id"]] += 1
+    done = {pid for pid, n in counts.items() if n >= runs_per_prompt}
+    kept = [r for r in rows if r["prompt_id"] in done]
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDS, restval="")
+        writer.writeheader()
+        writer.writerows(kept)
+
+    if os.path.exists(outputs_path):
+        with open(outputs_path) as f:
+            lines = [ln for ln in f if ln.strip()]
+        kept_lines = []
+        for ln in lines:
+            try:
+                if json.loads(ln)["prompt_id"] in done:
+                    kept_lines.append(ln)
+            except (json.JSONDecodeError, KeyError):
+                pass  # a line cut off when the run stopped
+        with open(outputs_path, "w") as f:
+            f.writelines(kept_lines)
+
+    dropped = len(rows) - len(kept)
+    if dropped:
+        print(f"Discarded {dropped} rows from a prompt that did not finish.")
+    return done
+
+
+# ------------------------------------------------------------
+# Baseline: target model alone
+# ------------------------------------------------------------
+
+@torch.no_grad()
+def baseline_generate(model, input_ids, eos_ids, device):
+    seq = input_ids
+    new_tokens = []
+
+    sync(device)
+    start = time.perf_counter()
+
+    while len(new_tokens) < MAX_NEW_TOKENS:
+        logits = model(input_ids=seq).logits[:, -1, :]
+        next_token = torch.argmax(logits, dim=-1)
+        token = next_token.item()
+        new_tokens.append(token)
+        if token in eos_ids:
+            break
+        seq = torch.cat([seq, next_token.unsqueeze(0)], dim=1)
+
+    sync(device)
+    total_time = time.perf_counter() - start
+    n = len(new_tokens)
+
+    metrics = {
+        "generated_tokens": n,
+        "proposed_tokens": 0,
+        "accepted_tokens": 0,
+        "iterations": n,
+        "tokens_per_iteration": 1.0,
+        "draft_time": 0.0,
+        "target_time": total_time,
+        "total_time": total_time,
+        "tokens_per_sec": ratio(n, total_time),
+        "avg_target_forward": ratio(total_time, n),
+    }
+    return new_tokens, metrics
+
+
+# ------------------------------------------------------------
+# Speculative decoding
+# ------------------------------------------------------------
+
+@torch.no_grad()
+def speculative_generate(draft_model, target_model, input_ids, K, eos_ids, device):
+    seq = input_ids
+    new_tokens = []
+
+    proposed_total = 0
+    accepted_total = 0
+    iterations = 0
+    draft_time = 0.0
+    target_time = 0.0
+    done = False
+
+    sync(device)
+    start = time.perf_counter()
+
+    while not done:
+        iterations += 1
+
+        # STEP 1: draft model proposes K tokens, one at a time.
+        t0 = time.perf_counter()
+        draft_seq = seq
+        proposed = []
+        for _ in range(K):
+            logits = draft_model(input_ids=draft_seq).logits[:, -1, :]
+            next_token = torch.argmax(logits, dim=-1)
+            proposed.append(next_token.item())
+            draft_seq = torch.cat([draft_seq, next_token.unsqueeze(0)], dim=1)
+        sync(device)
+        draft_time += time.perf_counter() - t0
+        proposed_total += K
+
+        # STEP 2: target model scores context + all K proposals in one pass.
+        # Logits at position (context_len - 1 + i) predict proposal i, and the
+        # final position predicts one extra "bonus" token. That gives K + 1
+        # target predictions from a single forward pass.
+        t0 = time.perf_counter()
+        target_logits = target_model(input_ids=draft_seq).logits[0]
+        first = seq.shape[1] - 1
+        target_preds = torch.argmax(target_logits[first:], dim=-1).tolist()
+        sync(device)
+        target_time += time.perf_counter() - t0
+
+        # STEP 3: accept the longest prefix where draft and target agree.
+        accepted = 0
+        for i in range(K):
+            if proposed[i] == target_preds[i]:
+                accepted += 1
+            else:
+                break
+
+        # STEP 4: keep accepted tokens, then the target's own token at the
+        # next position. That is the correction if a proposal was rejected,
+        # or the bonus token if all K were accepted, so every iteration
+        # yields at least one token.
+        to_add = proposed[:accepted] + [target_preds[accepted]]
+        for idx, token in enumerate(to_add):
+            new_tokens.append(token)
+            if idx < accepted:
+                accepted_total += 1
+            if token in eos_ids or len(new_tokens) >= MAX_NEW_TOKENS:
+                done = True
+                break
+
+        seq = torch.cat(
+            [input_ids, torch.tensor([new_tokens], dtype=torch.long, device=device)],
+            dim=1,
+        )
+
+    sync(device)
+    total_time = time.perf_counter() - start
+    n = len(new_tokens)
+
+    avg_draft = ratio(draft_time, iterations * K)
+    avg_target = ratio(target_time, iterations)
+
+    metrics = {
+        "generated_tokens": n,
+        "proposed_tokens": proposed_total,
+        "accepted_tokens": accepted_total,
+        "acceptance_rate": ratio(accepted_total, proposed_total),
+        "iterations": iterations,
+        "tokens_per_iteration": ratio(n, iterations),
+        "draft_time": draft_time,
+        "target_time": target_time,
+        "total_time": total_time,
+        "tokens_per_sec": ratio(n, total_time),
+        "avg_draft_forward": avg_draft,
+        "avg_target_forward": avg_target,
+        "cost_ratio": ratio(avg_draft, avg_target) if avg_draft != "" else "",
+    }
+    return new_tokens, metrics
+
+
+# ------------------------------------------------------------
+# Experiment
+# ------------------------------------------------------------
+
+def main():
+    device = pick_device()
+    draft_name, target_name = MODEL_PAIRS[MODEL_PAIR]
+
+    print("Using device:", device)
+    print("Draft model: ", draft_name)
+    print("Target model:", target_name)
+
+    tokenizer = AutoTokenizer.from_pretrained(target_name)
+
+    print("Loading draft model...")
+    draft_model = load_model(draft_name, device)
+    print("Loading target model...")
+    target_model = load_model(target_name, device)
+
+    eos_ids = get_eos_ids(tokenizer, target_model)
+
+    prompts = load_prompts()
+    print(f"Prompt set: {PROMPT_SET} ({len(prompts)} prompts)")
+
+    runs_per_prompt = RUNS_PER_CONFIG * (1 + len(K_VALUES))
+
+    if RESUME_FROM:
+        csv_path = RESUME_FROM
+        outputs_path = os.path.join(
+            os.path.dirname(csv_path),
+            os.path.basename(csv_path).replace("results_", "outputs_", 1)[:-4] + ".jsonl",
+        )
+        done = resume_existing(csv_path, outputs_path, runs_per_prompt)
+        before = len(prompts)
+        prompts = [p for p in prompts if p["prompt_id"] not in done]
+        print(f"Resuming {csv_path}: {before - len(prompts)} prompts already done, "
+              f"{len(prompts)} to run.")
+        mode = "a"
+    else:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        csv_path = f"results_{MODEL_PAIR}_{PROMPT_SET}_{stamp}.csv"
+        outputs_path = f"outputs_{MODEL_PAIR}_{PROMPT_SET}_{stamp}.jsonl"
+        mode = "w"
+
+    # Warmup so GPU initialization is not counted in the first timed run.
+    print("Warming up...")
+    warm_ids = encode(tokenizer, "Say hello.", device)
+    baseline_generate(target_model, warm_ids, eos_ids, device)
+    speculative_generate(draft_model, target_model, warm_ids, 3, eos_ids, device)
+
+    total_runs = len(prompts) * runs_per_prompt
+    run_count = 0
+    start = time.perf_counter()
+
+    with open(csv_path, mode, newline="") as csv_file, open(outputs_path, mode) as out_file:
+        writer = csv.DictWriter(csv_file, fieldnames=FIELDS, restval="")
+        if mode == "w":
+            writer.writeheader()
+
+        for p_info in prompts:
+            prompt_id = p_info["prompt_id"]
+            input_ids = encode(tokenizer, p_info["prompt"], device)
+            reference_tokens = None
+
+            for run in range(1, RUNS_PER_CONFIG + 1):
+
+                # Baseline and speculative runs are interleaved so that
+                # thermal drift affects both methods equally.
+                configs = [("baseline", None)] + [("speculative", k) for k in K_VALUES]
+
+                for method, K in configs:
+                    if method == "baseline":
+                        tokens, metrics = baseline_generate(
+                            target_model, input_ids, eos_ids, device
+                        )
+                        if reference_tokens is None:
+                            reference_tokens = tokens
+                    else:
+                        tokens, metrics = speculative_generate(
+                            draft_model, target_model, input_ids, K, eos_ids, device
+                        )
+
+                    row = {
+                        "timestamp": datetime.now().isoformat(timespec="seconds"),
+                        "device": device.type,
+                        "draft_model": draft_name if method == "speculative" else "",
+                        "target_model": target_name,
+                        "prompt_set": PROMPT_SET,
+                        "task": p_info["task"],
+                        "category": p_info["category"],
+                        "prompt_id": prompt_id,
+                        "method": method,
+                        "K": K if K is not None else "",
+                        "run": run,
+                        "prompt_tokens": input_ids.shape[1],
+                        "matches_baseline": tokens == reference_tokens,
+                    }
+                    row.update(metrics)
+                    writer.writerow(row)
+                    csv_file.flush()
+
+                    if run == 1:
+                        out_file.write(json.dumps({
+                            "prompt_id": prompt_id,
+                            "method": method,
+                            "K": K,
+                            "text": tokenizer.decode(tokens, skip_special_tokens=True),
+                        }) + "\n")
+                        out_file.flush()
+
+                    run_count += 1
+                    elapsed = time.perf_counter() - start
+                    eta = elapsed / run_count * (total_runs - run_count)
+                    label = "baseline" if K is None else f"K={K}"
+                    print(
+                        f"[{run_count}/{total_runs}] {prompt_id} run {run} {label}: "
+                        f"{metrics['generated_tokens']} tokens, "
+                        f"{metrics['tokens_per_sec']:.2f} tok/s "
+                        f"(ETA {eta / 3600:.1f} h)"
+                    )
+
+    print("\nResults written to", csv_path)
+    print("Outputs written to", outputs_path)
+
+
+if __name__ == "__main__":
+    main()
