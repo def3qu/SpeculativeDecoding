@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speculative Decoding on Consumer Hardware</title>
+<meta name="description" content="Does the theory of speculative decoding hold on an Apple Silicon workstation? Measurements, code, and programs you can run yourself.">
+<style>
+  :root { --bg:#fbfbf9; --fg:#1f1f1d; --muted:#5f5e5a; --line:#dcdad2; --card:#fff; --accent:#3c3489; --accent2:#b3261e; --soft:#eeedfe; --ok:#e1f5ee; --okline:#0f6e56; --warn:#faeeda; --warnline:#ba7517; --code:#f1f0ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --fg:#ecebe5; --muted:#a3a198; --line:#34332f; --card:#1f1f1d; --accent:#b4adf5; --accent2:#ff8a80; --soft:#26234a; --ok:#10332a; --okline:#5dcaa5; --warn:#3a2a10; --warnline:#e0a04a; --code:#262623; }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.65 Georgia, "Times New Roman", serif; }
+  .wrap { max-width:860px; margin:0 auto; padding:0 20px; }
+  h1,h2,h3,nav,.sans,table,.btn,code,pre,.tag { font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:56px 0 36px; border-bottom:1px solid var(--line); }
+  .kicker { color:var(--accent2); font:600 13px/1 system-ui,sans-serif; letter-spacing:.08em; text-transform:uppercase; }
+  h1 { font-size:clamp(30px,5vw,46px); line-height:1.15; margin:14px 0 14px; letter-spacing:-.01em; }
+  .lede { font-size:20px; color:var(--muted); max-width:680px; margin:0 0 22px; }
+  .by { font:15px/1.5 system-ui,sans-serif; color:var(--muted); margin:0 0 24px; }
+  .btns { display:flex; flex-wrap:wrap; gap:10px; }
+  .btn { display:inline-block; padding:10px 18px; border-radius:8px; border:1px solid var(--accent); color:var(--accent); text-decoration:none; font-weight:600; font-size:15px; }
+  .btn.primary { background:var(--accent); color:var(--bg); }
+  nav { position:sticky; top:0; background:color-mix(in srgb,var(--bg) 92%,transparent); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); z-index:5; }
+  nav .wrap { display:flex; gap:18px; overflow-x:auto; padding-top:10px; padding-bottom:10px; white-space:nowrap; font-size:14px; }
+  nav a { color:var(--muted); text-decoration:none; }
+  nav a:hover { color:var(--accent); }
+  section { padding:44px 0 8px; }
+  h2 { font-size:28px; margin:0 0 12px; letter-spacing:-.005em; }
+  h3 { font-size:18px; margin:26px 0 6px; }
+  p { margin:0 0 14px; }
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:18px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .card .big { font:700 34px/1.1 system-ui,sans-serif; color:var(--accent); }
+  .card .cap { font:14px/1.45 system-ui,sans-serif; color:var(--muted); margin-top:6px; }
+  .flow { display:flex; flex-wrap:wrap; gap:10px; align-items:stretch; margin:18px 0; font-family:system-ui,sans-serif; }
+  .step { flex:1 1 200px; background:var(--soft); border:1px solid var(--accent); border-radius:12px; padding:12px 14px; font-size:15px; line-height:1.45; }
+  .step b { display:block; color:var(--accent); margin-bottom:2px; }
+  .step.ok { background:var(--ok); border-color:var(--okline); } .step.ok b { color:var(--okline); }
+  .step.warn { background:var(--warn); border-color:var(--warnline); } .step.warn b { color:var(--warnline); }
+  .formula { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; text-align:center; font-size:22px; overflow-x:auto; }
+  .frac { display:inline-block; vertical-align:middle; text-align:center; margin:0 6px; }
+  .frac span { display:block; padding:2px 10px; } .frac .top { border-bottom:1.5px solid var(--fg); }
+  .formula i { font-family:Georgia,serif; }
+  .legend { font:15px/1.5 system-ui,sans-serif; color:var(--muted); margin-top:10px; text-align:left; }
+  .legend b { color:var(--fg); }
+  .chart { width:100%; height:auto; display:block; margin:10px 0 4px; }
+  .chart .grid { stroke:var(--line); stroke-width:1; } .chart .tick { fill:var(--muted); font:12px system-ui,sans-serif; }
+  .chart .axis { fill:var(--muted); font:13px system-ui,sans-serif; } .chart .lab { font:600 12px system-ui,sans-serif; }
+  table { border-collapse:collapse; width:100%; font-size:15px; margin:12px 0 4px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); } th { color:var(--muted); font-weight:600; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .scroll { overflow-x:auto; }
+  .note { font:14px/1.5 system-ui,sans-serif; color:var(--muted); }
+  pre { background:var(--code); border-radius:10px; padding:14px 16px; overflow-x:auto; font-size:14px; line-height:1.55; margin:10px 0 16px; }
+  code { font-size:.92em; background:var(--code); padding:1px 5px; border-radius:4px; } pre code { background:none; padding:0; }
+  ul { padding-left:22px; margin:0 0 14px; } li { margin:4px 0; }
+  a { color:var(--accent); }
+  .tag { display:inline-block; font-size:12px; font-weight:600; padding:2px 8px; border-radius:20px; background:var(--soft); color:var(--accent); margin-left:6px; vertical-align:middle; }
+  footer { margin:56px 0 40px; padding-top:20px; border-top:1px solid var(--line); font:14px/1.6 system-ui,sans-serif; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="kicker">ACM Mid-Southeast Conference &middot; November 2026</div>
+    <h1>Does Speculative Decoding Theory Hold on Consumer-Grade Hardware?</h1>
+    <p class="lede">A small model guesses, a large model checks. We tested the published speedup formula on an Apple Silicon workstation with 480 benchmark prompts and compared it with what the theory predicts.</p>
+    <p class="by">David Frazier &middot; Department of Mathematics and Computer Science, UVA Wise</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/def3qu/SpeculativeDecoding">Code on GitHub</a>
+      <a class="btn" href="#try">Try it yourself</a>
+      <a class="btn" href="#results">See the results</a>
+    </div>
+  </div>
+</header>
+
+<nav><div class="wrap sans">
+  <a href="#problem">The problem</a><a href="#idea">The idea</a><a href="#theory">The theory</a><a href="#results">Results</a><a href="#holds">Does it hold?</a><a href="#try">Try it</a><a href="#limits">Limits</a><a href="#refs">References</a>
+</div></nav>
+
+<main class="wrap">
+
+<section id="problem">
+  <h2>The problem: one token at a time</h2>
+  <p>Large language models (LLMs) write text one token at a time, and every new token needs a pass through the whole model. Commercial services raise concerns about privacy, cost per token and energy use, and running open-weight models locally is one alternative. But local models often run slowly.</p>
+  <p>The reason is memory. Each token requires reading every model weight from memory, about 16 GB for an 8-billion-parameter model at 16-bit precision. A processor does roughly one arithmetic operation per byte read, so it spends most of each pass waiting for data. Single-user inference is limited by memory bandwidth, not computation. Datacenters hide this by batching many users together, and a personal machine serves only one.</p>
+  <p>That leaves compute idle. If checking several tokens costs about the same as producing one, can we get several useful tokens out of each pass over the weights?</p>
+</section>
+
+<section id="idea">
+  <h2>The idea: draft, verify, keep</h2>
+  <p>Speculative decoding uses two models that share a tokenizer. A small, fast <b>draft</b> model guesses the next <i>K</i> tokens. The large <b>target</b> model then checks all of them in a single pass. Guesses that match what the target would have written are kept, and the first wrong guess is replaced by the target's own token.</p>
+  <div class="flow">
+    <div class="step"><b>1. Draft guesses</b>Small model proposes K tokens, for example <i>Paris , known for</i></div>
+    <div class="step ok"><b>2. Target checks</b>Large model scores all K guesses in one pass</div>
+    <div class="step warn"><b>3. Keep and fix</b>Accepted tokens are kept; the first rejection is replaced by the target's own token</div>
+  </div>
+  <p>With greedy decoding (always taking the most likely token), the text is identical to what the large model would produce alone. The method changes the speed, not the answer. In float16 arithmetic, rounding differences flipped a near-tie in 1.1% of our runs, which is a numerical effect and not a flaw in the algorithm.</p>
+</section>
+
+<section id="theory">
+  <h2>The theory: a speedup formula</h2>
+  <p>Leviathan et al. (2023) give an analytic model for the expected speedup:</p>
+  <div class="formula">
+    Speedup =
+    <span class="frac"><span class="top">1 &minus; <i>&alpha;</i><sup>(<i>K</i>+1)</sup></span><span>(1 &minus; <i>&alpha;</i>)(<i>Kc</i> + 1)</span></span>
+    <div class="legend"><b><i>&alpha;</i></b> acceptance rate: chance the target accepts a draft token &nbsp;&middot;&nbsp; <b><i>K</i></b> draft length: tokens guessed per round &nbsp;&middot;&nbsp; <b><i>c</i></b> cost ratio: draft pass time divided by target pass time</div>
+  </div>
+  <p style="margin-top:14px">Longer drafts produce more tokens per round but cost more draft passes, so the speedup rises and then falls as <i>K</i> grows. The theory has been validated mainly on datacenter hardware. We asked whether it holds on a consumer-class machine.</p>
+</section>
+
+<section id="results">
+  <h2>Results</h2>
+  <p><b>Setup.</b> Apple Silicon Mac Studio (PyTorch on MPS), Llama 3.2 1B as the draft and Llama 3.1 8B as the target, float16, greedy decoding. SpecBench: 480 prompts across six tasks (MT-Bench, translation, summarization, question answering, math, retrieval-augmented generation), 80 prompts each, up to 100 new tokens, K = 1, 2, 3, 5 and 8, one run per configuration.</p>
+  <div class="grid3">
+    <div class="card"><div class="big">1.86x</div><div class="cap">Overall speedup, best at K = 3 to 5</div></div>
+    <div class="card"><div class="big">2.14x</div><div class="cap">Math at K = 5, the best case</div></div>
+    <div class="card"><div class="big">1.63x</div><div class="cap">Translation at K = 3, the lowest peak</div></div>
+  </div>
+  <h3>Measured speedup by draft length</h3>
+  <svg viewBox="0 0 720 380" role="img" aria-label="Measured speedup versus draft length K for six SpecBench tasks" class="chart">
+<line x1="56" x2="570" y1="332.0" y2="332.0" class="grid"/><text x="48" y="336.0" text-anchor="end" class="tick">1.2x</text>
+<line x1="56" x2="570" y1="268.8" y2="268.8" class="grid"/><text x="48" y="272.8" text-anchor="end" class="tick">1.4x</text>
+<line x1="56" x2="570" y1="205.6" y2="205.6" class="grid"/><text x="48" y="209.6" text-anchor="end" class="tick">1.6x</text>
+<line x1="56" x2="570" y1="142.4" y2="142.4" class="grid"/><text x="48" y="146.4" text-anchor="end" class="tick">1.8x</text>
+<line x1="56" x2="570" y1="79.2" y2="79.2" class="grid"/><text x="48" y="83.2" text-anchor="end" class="tick">2.0x</text>
+<line x1="56" x2="570" y1="16.0" y2="16.0" class="grid"/><text x="48" y="20.0" text-anchor="end" class="tick">2.2x</text>
+<text x="56.0" y="352" text-anchor="middle" class="tick">1</text>
+<text x="184.5" y="352" text-anchor="middle" class="tick">2</text>
+<text x="313.0" y="352" text-anchor="middle" class="tick">3</text>
+<text x="441.5" y="352" text-anchor="middle" class="tick">5</text>
+<text x="570.0" y="352" text-anchor="middle" class="tick">8</text>
+<text x="313.0" y="372" text-anchor="middle" class="axis">Draft length K</text>
+<text transform="translate(14 174) rotate(-90)" text-anchor="middle" class="axis">Speedup over baseline</text>
+<polyline points="56.0,240.4 184.5,167.7 313.0,132.9 441.5,139.2 570.0,196.1" fill="none" stroke="#4a6fd8" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="56.0" cy="240.4" r="3.5" fill="#4a6fd8"><title>MT-Bench, K=1: 1.49x</title></circle>
+<circle cx="184.5" cy="167.7" r="3.5" fill="#4a6fd8"><title>MT-Bench, K=2: 1.72x</title></circle>
+<circle cx="313.0" cy="132.9" r="3.5" fill="#4a6fd8"><title>MT-Bench, K=3: 1.83x</title></circle>
+<circle cx="441.5" cy="139.2" r="3.5" fill="#4a6fd8"><title>MT-Bench, K=5: 1.81x</title></circle>
+<circle cx="570.0" cy="196.1" r="3.5" fill="#4a6fd8"><title>MT-Bench, K=8: 1.63x</title></circle>
+<polyline points="56.0,265.6 184.5,211.9 313.0,196.1 441.5,224.6 570.0,281.4" fill="none" stroke="#c8442f" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="56.0" cy="265.6" r="3.5" fill="#c8442f"><title>Translation, K=1: 1.41x</title></circle>
+<circle cx="184.5" cy="211.9" r="3.5" fill="#c8442f"><title>Translation, K=2: 1.58x</title></circle>
+<circle cx="313.0" cy="196.1" r="3.5" fill="#c8442f"><title>Translation, K=3: 1.63x</title></circle>
+<circle cx="441.5" cy="224.6" r="3.5" fill="#c8442f"><title>Translation, K=5: 1.54x</title></circle>
+<circle cx="570.0" cy="281.4" r="3.5" fill="#c8442f"><title>Translation, K=8: 1.36x</title></circle>
+<polyline points="56.0,237.2 184.5,158.2 313.0,126.6 441.5,129.8 570.0,186.6" fill="none" stroke="#d08a1e" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="56.0" cy="237.2" r="3.5" fill="#d08a1e"><title>Summarization, K=1: 1.50x</title></circle>
+<circle cx="184.5" cy="158.2" r="3.5" fill="#d08a1e"><title>Summarization, K=2: 1.75x</title></circle>
+<circle cx="313.0" cy="126.6" r="3.5" fill="#d08a1e"><title>Summarization, K=3: 1.85x</title></circle>
+<circle cx="441.5" cy="129.8" r="3.5" fill="#d08a1e"><title>Summarization, K=5: 1.84x</title></circle>
+<circle cx="570.0" cy="186.6" r="3.5" fill="#d08a1e"><title>Summarization, K=8: 1.66x</title></circle>
+<polyline points="56.0,253.0 184.5,189.8 313.0,167.7 441.5,167.7 570.0,230.9" fill="none" stroke="#2f9bb8" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="56.0" cy="253.0" r="3.5" fill="#2f9bb8"><title>Question answering, K=1: 1.45x</title></circle>
+<circle cx="184.5" cy="189.8" r="3.5" fill="#2f9bb8"><title>Question answering, K=2: 1.65x</title></circle>
+<circle cx="313.0" cy="167.7" r="3.5" fill="#2f9bb8"><title>Question answering, K=3: 1.72x</title></circle>
+<circle cx="441.5" cy="167.7" r="3.5" fill="#2f9bb8"><title>Question answering, K=5: 1.72x</title></circle>
+<circle cx="570.0" cy="230.9" r="3.5" fill="#2f9bb8"><title>Question answering, K=8: 1.52x</title></circle>
+<polyline points="56.0,224.6 184.5,126.6 313.0,72.9 441.5,35.0 570.0,53.9" fill="none" stroke="#1f7a54" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="56.0" cy="224.6" r="3.5" fill="#1f7a54"><title>Math reasoning, K=1: 1.54x</title></circle>
+<circle cx="184.5" cy="126.6" r="3.5" fill="#1f7a54"><title>Math reasoning, K=2: 1.85x</title></circle>
+<circle cx="313.0" cy="72.9" r="3.5" fill="#1f7a54"><title>Math reasoning, K=3: 2.02x</title></circle>
+<circle cx="441.5" cy="35.0" r="3.5" fill="#1f7a54"><title>Math reasoning, K=5: 2.14x</title></circle>
+<circle cx="570.0" cy="53.9" r="3.5" fill="#1f7a54"><title>Math reasoning, K=8: 2.08x</title></circle>
+<polyline points="56.0,234.0 184.5,145.6 313.0,104.5 441.5,104.5 570.0,161.4" fill="none" stroke="#b2509e" stroke-width="2.5" stroke-linejoin="round"/>
+<circle cx="56.0" cy="234.0" r="3.5" fill="#b2509e"><title>RAG, K=1: 1.51x</title></circle>
+<circle cx="184.5" cy="145.6" r="3.5" fill="#b2509e"><title>RAG, K=2: 1.79x</title></circle>
+<circle cx="313.0" cy="104.5" r="3.5" fill="#b2509e"><title>RAG, K=3: 1.92x</title></circle>
+<circle cx="441.5" cy="104.5" r="3.5" fill="#b2509e"><title>RAG, K=5: 1.92x</title></circle>
+<circle cx="570.0" cy="161.4" r="3.5" fill="#b2509e"><title>RAG, K=8: 1.74x</title></circle>
+<text x="580" y="57.9" fill="#1f7a54" class="lab">Math reasoning</text>
+<text x="580" y="165.4" fill="#b2509e" class="lab">RAG</text>
+<text x="580" y="190.6" fill="#d08a1e" class="lab">Summarization</text>
+<text x="580" y="205.6" fill="#4a6fd8" class="lab">MT-Bench</text>
+<text x="580" y="234.9" fill="#2f9bb8" class="lab">Question answering</text>
+<text x="580" y="285.4" fill="#c8442f" class="lab">Translation</text>
+</svg>
+  <p class="note">Speedup is speculative tokens per second divided by baseline tokens per second, aggregated over 80 prompts per task.</p>
+
+  <h3>Acceptance rate and cost ratio by task</h3>
+  <div class="scroll"><table>
+    <tr><th>Task</th><th class="n">Alpha</th><th class="n">c</th><th class="n">Best K</th><th class="n">Best speedup</th></tr>
+    <tr><td>Math reasoning</td><td class="n">0.88</td><td class="n">0.21</td><td class="n">5</td><td class="n">2.14x</td></tr>
+    <tr><td>MT-Bench (multi-turn conversations)</td><td class="n">0.82</td><td class="n">0.21</td><td class="n">3</td><td class="n">1.83x</td></tr>
+    <tr><td>RAG (retrieval-augmented generation)</td><td class="n">0.80</td><td class="n">0.18</td><td class="n">3 or 5</td><td class="n">1.92x</td></tr>
+    <tr><td>Question answering</td><td class="n">0.80</td><td class="n">0.23</td><td class="n">3</td><td class="n">1.72x</td></tr>
+    <tr><td>Summarization</td><td class="n">0.79</td><td class="n">0.18</td><td class="n">3</td><td class="n">1.85x</td></tr>
+    <tr><td>Translation</td><td class="n">0.73</td><td class="n">0.22</td><td class="n">3</td><td class="n">1.63x</td></tr>
+  </table></div>
+  <p class="note">Alpha is estimated from the K = 1 runs. Predictable text, such as step-by-step arithmetic, accepts more guesses and rewards longer drafts. In translation the small model often chooses a different but valid wording, so long drafts are wasted.</p>
+  <p>The draft model is about 6.5 times smaller than the target but only about 4 to 5 times faster per pass (c of 0.18 to 0.23), so small models do not benefit fully from their size on this hardware.</p>
+</section>
+
+<section id="holds">
+  <h2>Does the theory hold?</h2>
+  <div class="grid3">
+    <div class="card"><div class="big">1.9%</div><div class="cap">Mean error predicting K = 2 to 8 speedups from alpha measured at K = 1 (worst case 7.5%)</div></div>
+    <div class="card"><div class="big">5.3%</div><div class="cap">Extra time for a target pass that checks 9 tokens versus producing 1, consistent with a memory-bound machine</div></div>
+    <div class="card"><div class="big">29%</div><div class="cap">Worst over-prediction (translation) when one global alpha is used for every task</div></div>
+  </div>
+  <p><b>Largely yes, with a condition.</b> When alpha is estimated per task, the formula predicts the measured speedups closely. A single average alpha is not enough: acceptance varies from about 0.73 to 0.88 across tasks, and ignoring that over-predicts by 8.7% on average. The geometric model of acceptance fits for most tasks; translation is the exception, with an implied alpha that rises as K grows.</p>
+</section>
+
+<section id="try">
+  <h2>Try it yourself</h2>
+  <p>Three programs in the repository let you run speculative decoding on your own computer. They need Python 3.9 or newer, and a GPU (NVIDIA or Apple Silicon) is strongly recommended. The first run downloads the models.</p>
+<pre><code>git clone https://github.com/def3qu/SpeculativeDecoding
+cd SpeculativeDecoding
+pip install torch transformers</code></pre>
+  <ul>
+    <li><b>speculative_playground.py</b> <span class="tag">compare</span> answers a prompt with the large model alone and again with speculative decoding, then prints the measured alpha, c and the speedup the formula predicts. Type <code>:sweep</code> to see K = 1 to 8 in one run.</li>
+    <li><b>speculative_answer.py</b> <span class="tag">chat</span> answers with speculative decoding only (K = 3), using Qwen2.5 0.5B to draft for Qwen2.5 7B. About 16 GB of memory.</li>
+    <li><b>speculative_web.py</b> <span class="tag">browser</span> the same chat as a web page at 127.0.0.1:8000. Needs <code>speculative_answer.py</code> in the same folder.</li>
+  </ul>
+<pre><code>python speculative_playground.py
+python speculative_playground.py --pair tiny      # about 4 GB, for small machines
+python speculative_answer.py
+python speculative_web.py</code></pre>
+  <p class="note">The draft and target must come from the same model family so they share a tokenizer. These programs use a KV cache for both models; the research benchmark does not, so absolute speeds differ.</p>
+</section>
+
+<section id="limits">
+  <h2>Limits</h2>
+  <ul>
+    <li><b>One machine and one model family.</b> Results come from a single Apple Silicon workstation and one Llama draft and target pair.</li>
+    <li><b>No KV cache in the benchmark.</b> Both the baseline and speculative runs recompute the full sequence at each step, so absolute speeds are lower than in production engines, and the cost ratio and verification cost could differ with caching. The speedup ratio compares like with like.</li>
+    <li><b>One run per configuration.</b> Timing noise is averaged across 80 prompts per task rather than across repetitions.</li>
+    <li><b>Output is not always byte-identical.</b> 27 of 2,400 speculative runs (1.1%) differed from the baseline text because of float16 rounding.</li>
+    <li><b>Greedy decoding only.</b> Sampling at a nonzero temperature was not tested.</li>
+  </ul>
+</section>
+
+<section id="refs">
+  <h2>References</h2>
+  <ul>
+    <li>Y. Leviathan, M. Kalman, Y. Matias. <i>Fast Inference from Transformers via Speculative Decoding.</i> ICML 2023.</li>
+    <li>SpecBench benchmark prompts: six task types, 80 prompts each.</li>
+    <li>Models: Llama 3.2 1B Instruct and Llama 3.1 8B Instruct (Meta); Qwen2.5 Instruct family (Alibaba).</li>
+  </ul>
+</section>
+
+</main>
+<div class="wrap"><footer>
+  David Frazier, Department of Mathematics and Computer Science, University of Virginia's College at Wise. Code and data: <a href="https://github.com/def3qu/SpeculativeDecoding">github.com/def3qu/SpeculativeDecoding</a>.
+</footer></div>
+</body>
+</html>
